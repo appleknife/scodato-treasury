@@ -441,3 +441,5 @@ main.enter > *:nth-child(3) { animation-delay: .1s; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.panel.glow { box-shadow: inset 0 0 0 3px var(--parch-d), 0 6px 0 var(--wood-d), 0 0 0 4px rgba(255,207,74,.55), 0 0 30px rgba(255,207,74,.45); animation: glowpulse 2.2s ease-in-out infinite; }
+@keyframes glowpulse { 50% { box-shadow: inset 0 0 0 3px var(--parch-d), 0 6px 0 var(--wood-d), 0 0 0 4px rgba(255,207,74,.85), 0 0 44px rgba(255,207,74,.6); } }

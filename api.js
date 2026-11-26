@@ -54,7 +54,8 @@
         return sbRpc("trove_submit_request", args);
       }
     },
-    markDone: (id) => sbRpc("trove_mark_done", { p_id: id }),
+    markLive: (id) => sbRpc("trove_mark_live", { p_id: id }),
+    adminMarkDone: (pw, id) => sbRpc("trove_admin_mark_done", { p_pw: pw, p_id: id }),
     playerCancel: (id, token) => sbRpc("trove_player_cancel", { p_id: id, p_token: token }),
     adminLogin: (pw) => sbRpc("trove_admin_login", { p_pw: pw }),
     adminChangePassword: (pw, np) => sbRpc("trove_admin_change_password", { p_pw: pw, p_new: np }),
@@ -106,8 +107,13 @@
       const r = { id: uid(), player, building, invested: a.invested, note: (a.note || "").slice(0, 200) || null, wish: wi ? { item_id: wi.id, name: wi.name, rarity: wi.rarity } : null, status: "pending", allocations: [], admin_note: null, created_at: now(), decided_at: null, done_at: null };
       d.requests.push(r); d.tokens[r.id] = a.token; dbSave(d); return wait(r.id);
     },
-    async markDone(id) {
+    async markLive(id) {
       const d = dbLoad(); const r = d.requests.find(x => x.id === id);
+      if (r && r.status === "approved" && !r.live_at) { r.live_at = now(); dbSave(d); }
+      return wait();
+    },
+    async adminMarkDone(pw, id) {
+      const d = dbLoad(); chk(d, pw); const r = d.requests.find(x => x.id === id);
       if (!r || r.status !== "approved") throw new Error("That request is not waiting to be finished");
       r.status = "done"; r.done_at = now(); dbSave(d); return wait();
     },
@@ -153,7 +159,7 @@
     async adminReopen(pw, id) {
       const d = dbLoad(); chk(d, pw); const r = d.requests.find(x => x.id === id);
       if (r.status === "approved") restore(d, r);
-      if (["approved", "denied"].includes(r.status)) Object.assign(r, { status: "pending", allocations: [], admin_note: null, decided_at: null });
+      if (["approved", "denied"].includes(r.status)) Object.assign(r, { status: "pending", allocations: [], admin_note: null, decided_at: null, live_at: null });
       dbSave(d); return wait();
     },
     async adminRemoveRequest(pw, id) {

@@ -201,7 +201,7 @@
         ${tabBtn("treasury", "Treasury")}
         ${tabBtn("request", "Request")}
         ${tabBtn("board", "Board")}
-        ${tabBtn("admin", DONOR + " 🔒", state.pw && pend ? pend : 0)}
+        ${tabBtn("admin", DONOR + " 🔒", state.pw ? pend + byStatus("approved").filter((r) => r.live_at).length : 0)}
       </nav>
       ${API.mode === "demo" ? `<div class="notice demo"><b>Demo mode:</b> nothing is shared yet — everything saves only in this browser. ${esc(DONOR)}'s demo password is <b>demo</b>. Connect Supabase in <code>config.js</code> to go live.</div>` : ""}
       ${state.error ? `<div class="notice">Having trouble reaching the board (${esc(state.error)}). Retrying…</div>` : ""}
@@ -222,14 +222,21 @@
     if (!mine.length) return "";
     const ranked = pendingRanked();
     return mine.map((r) => {
+      if (r.status === "approved" && r.live_at) return `
+        <section class="spot pending">
+          <h3 class="gtext">Your guild request is up!</h3>
+          <div class="big-instr">${esc(DONOR)} has been told it's ready. He'll fill it in game and close this out — nothing else for you to do.</div>
+          ${allocsHTML(r.allocations)}
+          <div class="hint">Once it's filled: sell, then invest the gold in your <b>${esc(r.building)}</b>.</div>
+        </section>`;
       if (r.status === "approved") return `
         <section class="spot approved">
           <h3 class="gtext">${esc(DONOR)} approved your request!</h3>
-          <div class="big-instr">In Shop Titans, put up a <b>guild request</b> for:</div>
+          <div class="big-instr"><b>Step 1:</b> in Shop Titans, put up a <b>guild request</b> for:</div>
           ${allocsHTML(r.allocations)}
           ${r.admin_note ? `<div class="req-note">“${esc(r.admin_note)}” — ${esc(DONOR)}</div>` : ""}
-          <div class="hint">For your <b>${esc(r.building)}</b> investment. Once ${esc(DONOR)} has filled it in game, tap Done.</div>
-          <div class="btn-row" style="margin-top:10px"><button class="btn green" data-act="mark-done" data-id="${r.id}">Done in game ✓</button></div>
+          <div class="big-instr" style="margin-top:8px"><b>Step 2:</b> once it's up, tap the button so ${esc(DONOR)} knows to fill it.</div>
+          <div class="btn-row" style="margin-top:10px"><button class="btn green" data-act="mark-live" data-id="${r.id}">My guild request is up 📣</button></div>
         </section>`;
       if (r.status === "pending") {
         const pos = ranked.findIndex((x) => x.id === r.id) + 1;
@@ -329,10 +336,10 @@
     if (ctx.admin) {
       if (r.status === "pending") actions = state.open[r.id] || state.denying[r.id] ? `<button class="btn sm wood" data-act="adm-close" data-id="${r.id}">Close</button>`
         : `<button class="btn sm green" data-act="adm-toggle" data-id="${r.id}">Pick items ▸</button><button class="btn sm red" data-act="adm-deny-open" data-id="${r.id}">Deny</button>`;
-      else if (r.status === "approved") actions = `<button class="btn sm blue" data-act="mark-done" data-id="${r.id}">Done ✓</button><button class="btn sm wood" data-act="adm-undo" data-id="${r.id}">Undo</button>`;
+      else if (r.status === "approved") actions = `<button class="btn sm blue" data-act="mark-done" data-id="${r.id}">Filled — Done ✓</button><button class="btn sm wood" data-act="adm-undo" data-id="${r.id}">Undo</button>`;
       else if (r.status === "denied") actions = `<button class="btn sm wood" data-act="adm-undo" data-id="${r.id}">Undo deny</button>`;
     } else {
-      if (r.status === "approved") actions = `<button class="btn sm green" data-act="mark-done" data-id="${r.id}">Done ✓</button>`;
+      if (r.status === "approved" && !r.live_at && mine) actions = `<button class="btn sm green" data-act="mark-live" data-id="${r.id}">My request is up 📣</button>`;
       if (mine && r.status === "pending") actions += `<button class="btn sm wood" data-act="cancel-mine" data-id="${r.id}">Cancel</button>`;
     }
     return `<article class="req ${mine ? "mine" : ""}">
@@ -344,6 +351,7 @@
           <span class="chip"><span class="coin" style="width:15px;height:15px;vertical-align:-2px"></span>${fmtAmt(r.invested)} invested</span>
           ${ctx.admin && r.status === "pending" && lastGotH(r.player) != null ? `<span class="chip" style="background:#fff0c9;border-color:#e0b24a">got items ${lastGotH(r.player) ? lastGotH(r.player) + "h" : "<1h"} ago</span>` : ""}
           ${pos === 1 ? `<span class="chip best">Lowest investment — next up</span>` : ""}
+          ${r.status === "approved" ? (r.live_at ? `<span class="chip best">📣 Guild request is up ${ago(r.live_at)}</span>` : `<span class="chip">Waiting for them to request in game</span>`) : ""}
           <span class="chip">${r.status === "done" ? "finished " + ago(r.done_at) : r.status === "denied" ? "denied " + ago(r.decided_at) : r.status === "approved" ? "approved " + ago(r.decided_at) : "asked " + ago(r.created_at)}</span>
         </div>
         ${r.wish && r.status === "pending" ? `<div class="alloc-list"><span class="small" style="align-self:center">Would like:</span><span class="alloc ${rclass(r.wish.rarity)}">${iconHTML(Object.assign({}, r.wish, { icon: (D().items.find((i) => i.id === r.wish.item_id) || {}).icon }), "xs")}<span class="alloc-txt"><span>${esc(r.wish.name)}</span>${rarityTag(r.wish.rarity)}</span></span></div>` : ""}
@@ -388,9 +396,10 @@
       </form>
     </section>`;
     const pend = byStatus("pending").length;
+    const liveN = byStatus("approved").filter((r) => r.live_at).length;
     const sub = (id, label) => `<button class="btn sm" aria-selected="${state.adminTab === id}" data-act="atab" data-id="${id}">${label}</button>`;
     return `<div class="subtabs">
-        ${sub("requests", "Requests" + (pend ? ` (${pend})` : ""))}${sub("items", "My items")}${sub("settings", "Settings")}
+        ${sub("requests", "Requests" + (pend + liveN ? ` (${pend + liveN})` : ""))}${sub("items", "My items")}${sub("settings", "Settings")}
         <span style="flex:1"></span><button class="btn sm wood" data-act="logout">Lock</button>
       </div>
       ${state.adminTab === "requests" ? adminRequests() : state.adminTab === "items" ? adminItems() : adminSettings()}`;
@@ -398,16 +407,22 @@
 
   function adminRequests() {
     const ranked = pendingRanked();
-    const approved = byStatus("approved");
+    const live = byStatus("approved").filter((r) => r.live_at).sort((a, b) => new Date(a.live_at) - new Date(b.live_at));
+    const approved = byStatus("approved").filter((r) => !r.live_at);
     const denied = byStatus("denied");
-    return `<section class="panel">
+    return `<section class="panel ${live.length ? "glow" : ""}">
+      <div class="panel-head"><h2 class="gtext">📣 Ready to fill</h2></div>
+      <p class="muted small" style="margin-top:-6px">These players have put up their guild request in game. Fill it, then tap <b>Filled — Done</b> to close it.</p>
+      ${live.length ? `<div class="req-list">${live.map((r) => reqCard(r, { admin: true })).join("")}</div>` : `<div class="empty">No guild requests up right now.</div>`}
+    </section>
+    <section class="panel">
       <div class="panel-head"><h2 class="gtext">Waiting for you</h2></div>
       <p class="muted small" style="margin-top:-6px">Lowest current investment first. Tap <b>Pick items</b> on a request, choose what they get with + / −, then <b>Approve</b>. Those items are set aside so nobody else gets promised them.</p>
       ${ranked.length ? `<div class="req-list">${ranked.map((r) => reqCard(r, { ranked, admin: true })).join("")}</div>` : `<div class="empty"><span class="gtext">All caught up</span>No new requests.</div>`}
     </section>
     <section class="panel">
       <div class="panel-head"><h2 class="gtext">Approved — please request in game</h2></div>
-      <p class="muted small" style="margin-top:-6px">Tap Done after you've filled their guild request (they can tap it too). Undo puts the items back.</p>
+      <p class="muted small" style="margin-top:-6px">Approved, but they haven't said their guild request is up yet. You can still fill it and tap Done if you see it in game. Undo puts the items back.</p>
       ${approved.length ? `<div class="req-list">${approved.map((r) => reqCard(r, { admin: true })).join("")}</div>` : `<div class="empty">Nothing waiting.</div>`}
     </section>
     ${denied.length ? `<section class="panel"><div class="panel-head"><h2 class="gtext">Recently denied</h2></div><div class="req-list">${denied.map((r) => reqCard(r, { admin: true })).join("")}</div></section>` : ""}`;
@@ -662,13 +677,14 @@
     if (act === "tab" || act === "atab") S("tab");
     else if (act === "adm-step") S(Number(el.dataset.d) > 0 ? "step" : "stepDown");
     else if (act === "imp-pick") S("whoosh");
-    else if (!["mark-done", "adm-approve", "mute"].includes(act)) S("click");
+    else if (!["mark-done", "mark-live", "adm-approve", "mute"].includes(act)) S("click");
     switch (act) {
       case "mute": { const m = SFX.toggle(); el.textContent = m ? "🔇" : "🔊"; el.setAttribute("aria-label", m ? "Turn sounds on" : "Turn sounds off"); break; }
       case "tab": state.tab = id; state.anim = true; history.replaceState(null, "", "#" + id); render(); window.scrollTo({ top: 0 }); break;
       case "atab": state.adminTab = id; state.anim = true; render(); break;
       case "logout": logout(); break;
-      case "mark-done": run(() => API.markDone(id), "Marked done — thanks!", "sparkle"); break;
+      case "mark-done": run(() => API.adminMarkDone(state.pw, id), "Filled and closed!", "sparkle"); break;
+      case "mark-live": run(() => API.markLive(id), "Sent! " + DONOR + " will see it's ready to fill.", "success"); break;
       case "cancel-mine": run(() => API.playerCancel(id, myToken(id)), "Removed", "paper"); break;
       case "adm-toggle": {
         state.open[id] = !state.open[id];

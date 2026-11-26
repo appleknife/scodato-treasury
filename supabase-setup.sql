@@ -31,8 +31,9 @@ create table if not exists public.trove_requests (
   done_at      timestamptz
 );
 
--- added later: the item a player would like (optional)
+-- added later: the item a player would like (optional), and when their guild request went up in game
 alter table public.trove_requests add column if not exists wish jsonb;
+alter table public.trove_requests add column if not exists live_at timestamptz;
 
 create table if not exists public.trove_settings (
   key   text primary key,
@@ -118,12 +119,12 @@ begin
   return new_id;
 end $$;
 
--- anyone can mark an approved request as done (the board is open on purpose)
-create or replace function public.trove_mark_done(p_id uuid) returns void
+-- the player says their guild request is up in game (anyone can tap it; the board is open on purpose)
+drop function if exists public.trove_mark_done(uuid);
+create or replace function public.trove_mark_live(p_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  update trove_requests set status = 'done', done_at = now() where id = p_id and status = 'approved';
-  if not found then raise exception 'That request is not waiting to be finished'; end if;
+  update trove_requests set live_at = now() where id = p_id and status = 'approved' and live_at is null;
 end $$;
 
 -- the person who made the request (same device) can cancel / dismiss it
@@ -225,6 +226,15 @@ begin
 end $$;
 
 -- undo an approval or a denial: puts trove_items back and returns the request to pending
+-- only Scodato closes a request, after he has filled it in game
+create or replace function public.trove_admin_mark_done(p_pw text, p_id uuid) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform trove_check_pw(p_pw);
+  update trove_requests set status = 'done', done_at = now() where id = p_id and status = 'approved';
+  if not found then raise exception 'That request is not waiting to be finished'; end if;
+end $$;
+
 create or replace function public.trove_admin_reopen(p_pw text, p_id uuid) returns void
 language plpgsql security definer set search_path = public, extensions as $$
 declare r trove_requests; a jsonb;
@@ -237,7 +247,7 @@ begin
     end loop;
   end if;
   if r.status in ('approved','denied') then
-    update trove_requests set status = 'pending', allocations = '[]'::jsonb, admin_note = null, decided_at = null where id = p_id;
+    update trove_requests set status = 'pending', allocations = '[]'::jsonb, admin_note = null, decided_at = null, live_at = null where id = p_id;
   end if;
 end $$;
 
@@ -262,7 +272,7 @@ revoke all on function public.trove_check_pw(text) from public, anon, authentica
 revoke all on public.trove_request_tokens, public.trove_admin_secret from anon, authenticated;
 revoke insert, update, delete on public.trove_items, public.trove_requests, public.trove_settings from anon, authenticated;
 grant select on public.trove_items, public.trove_requests, public.trove_settings to anon, authenticated;
-grant execute on function public.trove_submit_request(text,text,numeric,text,text,uuid), public.trove_mark_done(uuid),
+grant execute on function public.trove_submit_request(text,text,numeric,text,text,uuid), public.trove_mark_live(uuid), public.trove_admin_mark_done(text,uuid),
   public.trove_player_cancel(uuid,text), public.trove_public_stats(), public.trove_admin_login(text),
   public.trove_admin_change_password(text,text), public.trove_admin_save_items(text,jsonb),
   public.trove_admin_delete_item(text,uuid), public.trove_admin_decide(text,uuid,boolean,jsonb,text),
