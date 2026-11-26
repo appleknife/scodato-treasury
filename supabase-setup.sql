@@ -64,7 +64,7 @@ create policy "read trove_settings" on public.trove_settings for select using (t
 insert into public.trove_settings(key, value) values ('buildings', '[
   "Town Hall","Temple","Tavern","Emerald Inn","Academy","Training Hall","Master Lodge",
   "Summoner''s Tent","Wizard Tower","Laboratory","Apothecary","Ether Well","Mausoleum",
-  "Garden","Iron Mine","Lumberyard","Wood Workshop","Jewel Workshop","Tailor Workshop",
+  "Garden","Military Camp","Iron Mine","Lumberyard","Wood Workshop","Jewel Workshop","Tailor Workshop",
   "Tannery","Smithy","Weaver Mill","Ironwood Sawmill","Oil Press","Smelter","Jewel Storehouse"
 ]'::jsonb) on conflict (key) do nothing;
 

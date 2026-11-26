@@ -58,7 +58,7 @@
 
   // ---------------- Demo mode (this browser only) ----------------
   const KEY = "trove.demo.v1";
-  const DEFAULT_BUILDINGS = ["Town Hall","Temple","Tavern","Emerald Inn","Academy","Training Hall","Master Lodge","Summoner's Tent","Wizard Tower","Laboratory","Apothecary","Ether Well","Mausoleum","Garden","Iron Mine","Lumberyard","Wood Workshop","Jewel Workshop","Tailor Workshop","Tannery","Smithy","Weaver Mill","Ironwood Sawmill","Oil Press","Smelter","Jewel Storehouse"];
+  const DEFAULT_BUILDINGS = ["Town Hall","Temple","Tavern","Emerald Inn","Academy","Training Hall","Master Lodge","Summoner's Tent","Wizard Tower","Laboratory","Apothecary","Ether Well","Mausoleum","Garden","Military Camp","Iron Mine","Lumberyard","Wood Workshop","Jewel Workshop","Tailor Workshop","Tannery","Smithy","Weaver Mill","Ironwood Sawmill","Oil Press","Smelter","Jewel Storehouse"];
   const DEFAULT_NAMES = ["Worldshaper Hood","Aura Reactor","Darkmatter Cortex","Voyager Neovisor","Microcosmos Infusion","Slipstream Assistant","Paradox Entity","Dimensional Anchor"];
   function dbLoad() {
     let d = null;
