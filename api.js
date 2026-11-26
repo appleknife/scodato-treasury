@@ -5,11 +5,10 @@
 
   // ---------------- Supabase over plain REST ----------------
   function sbHeaders() {
-    return {
-      apikey: cfg.SUPABASE_ANON_KEY,
-      Authorization: "Bearer " + cfg.SUPABASE_ANON_KEY,
-      "Content-Type": "application/json"
-    };
+    const h = { apikey: cfg.SUPABASE_ANON_KEY, "Content-Type": "application/json" };
+    // old-style anon keys are JWTs and also go in Authorization; new sb_publishable_ keys only go in apikey
+    if (/^eyJ/.test(cfg.SUPABASE_ANON_KEY)) h.Authorization = "Bearer " + cfg.SUPABASE_ANON_KEY;
+    return h;
   }
   const base = live ? cfg.SUPABASE_URL.replace(/\/+$/, "") + "/rest/v1" : "";
 

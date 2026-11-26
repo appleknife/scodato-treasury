@@ -7,8 +7,8 @@
 //  Scodato password in demo mode is: demo).
 // ============================================================
 window.TROVE_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://tfulhdmwhgyvkazycuhx.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_HdubQ0mJH63I3eGEi7fcOg_3nH3gXqH",
 
   TITLE: "Scodato's Treasury",
   SUBTITLE: "Guild donation board",
