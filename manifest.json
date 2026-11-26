@@ -1,0 +1,16 @@
+{
+  "name": "Scodato's Treasury",
+  "short_name": "Treasury",
+  "description": "Guild donation board — see what's in the treasury and request items for your building investments.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#271a22",
+  "theme_color": "#351f2c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
