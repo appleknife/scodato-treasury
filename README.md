@@ -5,6 +5,8 @@ A guild donation board for Shop Titans. Scodato posts what he can donate, guildm
 - **Players** need no account: Treasury (what's available) → Request (name, building, current investment) → watch the Board. Their own request stays pinned at the top on their device.
 - **Scodato** unlocks his tab with a password that is checked on the server. He can drop, paste or pick a screenshot of his inventory, and the app reads the item names and counts and crops the icons. All of this runs in the browser.
 - The queue is sorted by **lowest current investment first**.
+- **One item per approval** by default. Scodato can change this limit in Settings, and the database enforces it.
+- One open request per player. If someone got items in the last 24 hours, they get a heads-up (it never blocks them, in case their guild request didn't go through), and Scodato sees "got items Xh ago" on their request.
 - Approving sets the items aside right away, so the same items can't be promised to two people. Undo puts them back.
 - When the in-game donation is done, either person taps **Done** and the request leaves the board.
 

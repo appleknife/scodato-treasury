@@ -89,6 +89,23 @@
     byStatus("approved").forEach((r) => (r.allocations || []).forEach((a) => (m[a.item_id] = (m[a.item_id] || 0) + a.qty)));
     return m;
   }
+  const capPer = () => Number(D().maxPer) || 0;
+  function cooldownLeftH(player) {
+    const h = Number(D().cooldownH) || 0, n = (player || "").trim().toLowerCase();
+    if (!h || !n) return 0;
+    const last = Math.max(0, ...D().requests.filter((r) => r.player.trim().toLowerCase() === n && ["approved", "done"].includes(r.status) && r.decided_at).map((r) => new Date(r.decided_at).getTime()));
+    const left = last + h * 3600e3 - Date.now();
+    return last && left > 0 ? Math.ceil(left / 3600e3) : 0;
+  }
+  function lastGotH(player) {
+    const n = player.trim().toLowerCase();
+    const t = Math.max(0, ...D().requests.filter((r) => r.player.trim().toLowerCase() === n && ["approved", "done"].includes(r.status) && r.decided_at).map((r) => new Date(r.decided_at).getTime()));
+    const h = (Date.now() - t) / 3600e3;
+    return t && h < 48 ? Math.floor(h) : null;
+  }
+  function cdNote(player) {
+    return cooldownLeftH(player) ? `<div class="notice">${esc(player)} got items less than ${D().cooldownH} hours ago. The game usually only allows one guild request a day — if yours didn't go through, go ahead and send this anyway.</div>` : "";
+  }
   const isMine = (id) => state.mine.some((m) => m.id === id);
   const myToken = (id) => (state.mine.find((m) => m.id === id) || {}).token;
   function sortItems(items) {
@@ -252,7 +269,9 @@
           <div class="hint">Copy it from the building's invest screen. You can type 1.5K / 2M / 3B. The lower it is, the more the guild gains — so lower goes first in line.</div></label>
         <label class="field"><span>Note for ${esc(DONOR)} <span class="muted small">(optional)</span></span>
           <textarea name="note" maxlength="200" data-bind="form.note" placeholder="Anything he should know?">${esc(f.note)}</textarea></label>
+        <div id="cd-note">${cdNote(f.player)}</div>
         <button class="btn block" type="submit">Send request</button>
+        <div class="hint center">One open request at a time.</div>
       </form>
     </section>
     <section class="panel">
@@ -262,6 +281,7 @@
         <li>${esc(DONOR)} approves it and picks which items (and how many) you get.</li>
         <li>Come back here — you'll see exactly what to put up as a <b>guild request</b> in game.</li>
         <li>After ${esc(DONOR)} fills it, sell the items, invest the gold, and tap <b>Done</b>.</li>
+        <li>You can ask again once the game lets you put up another guild request (usually once a day).</li>
       </ol>
     </section>`;
   }
@@ -287,6 +307,7 @@
         <div class="req-meta">
           <span class="chip bld">${esc(r.building)}</span>
           <span class="chip"><span class="coin" style="width:15px;height:15px;vertical-align:-2px"></span>${fmtAmt(r.invested)} invested</span>
+          ${ctx.admin && r.status === "pending" && lastGotH(r.player) != null ? `<span class="chip" style="background:#fff0c9;border-color:#e0b24a">got items ${lastGotH(r.player) ? lastGotH(r.player) + "h" : "<1h"} ago</span>` : ""}
           ${pos === 1 ? `<span class="chip best">Lowest investment — next up</span>` : ""}
           <span class="chip">${r.status === "done" ? "finished " + ago(r.done_at) : r.status === "denied" ? "denied " + ago(r.decided_at) : r.status === "approved" ? "approved " + ago(r.decided_at) : "asked " + ago(r.created_at)}</span>
         </div>
@@ -369,7 +390,7 @@
         </div></div>`).join("")}
       <input placeholder="Message to them (optional)" data-bind="notes.${r.id}" value="${esc(state.notes[r.id] || "")}" style="margin-top:10px">
       <div class="btn-row" style="margin-top:10px;justify-content:flex-end">
-        <span class="muted small">${total} item${total === 1 ? "" : "s"} picked</span>
+        <span class="muted small">${total}${capPer() ? " / " + capPer() : ""} item${total === 1 ? "" : "s"} picked${capPer() ? " (limit per approval)" : ""}</span>
         <button class="btn green" data-act="adm-approve" data-id="${r.id}" ${total ? "" : "disabled"}>Approve ✓</button>
       </div>
     </div>`;
@@ -452,6 +473,14 @@
       <textarea id="set-names" rows="6">${esc((d.knownNames || []).join("\n"))}</textarea>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-act="save-names">Save names</button></div>
     </section>
+    <section class="panel">
+      <div class="panel-head"><h2 class="gtext">Limits</h2></div>
+      <div class="form-grid">
+        <label class="field"><span>Max items per approval</span><input id="set-cap" inputmode="numeric" value="${esc(d.maxPer ?? 1)}"><div class="hint">0 = no limit.</div></label>
+        <label class="field"><span>"Recently got items" warning (hours)</span><input id="set-cd" inputmode="numeric" value="${esc(d.cooldownH ?? 24)}"><div class="hint">Just a heads-up for players, never blocks them. 0 = off.</div></label>
+      </div>
+      <button class="btn green" data-act="save-limits">Save limits</button>
+    </section>
     <section class="panel" style="max-width:520px">
       <div class="panel-head"><h2 class="gtext">Change password</h2></div>
       <label class="field"><span>New password</span><input type="password" id="new-pw" autocomplete="new-password" minlength="6"></label>
@@ -525,11 +554,15 @@
     const t = e.target;
     if (t.dataset.bind) {
       setPath(t.dataset.bind, t.type === "radio" ? t.value : t.value);
+      if (t.dataset.bind === "form.player") { const n = document.getElementById("cd-note"); if (n) n.innerHTML = cdNote(t.value); }
       if (t.dataset.bind === "search") { const pos = t.selectionStart; render(); const n = app.querySelector('[data-bind="search"]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }
     }
     if (t.dataset.pick) {
       const max = +t.dataset.max; let v = parseInt(t.value, 10); if (isNaN(v) || v < 0) v = 0; if (v > max) v = max;
-      (state.picks[t.dataset.pick] = state.picks[t.dataset.pick] || {})[t.dataset.item] = v;
+      const pp = (state.picks[t.dataset.pick] = state.picks[t.dataset.pick] || {});
+      const others = Object.entries(pp).filter(([k]) => k !== t.dataset.item).reduce((s, [, n]) => s + (n || 0), 0);
+      if (capPer() && v + others > capPer()) { v = Math.max(0, capPer() - others); t.value = v; toast(`Limit is ${capPer()} per approval`, true); }
+      pp[t.dataset.item] = v;
     }
     if (t.dataset.imp != null && state.imp && state.imp.rows) {
       const row = state.imp.rows[+t.dataset.imp], f = t.dataset.f;
@@ -601,6 +634,8 @@
       case "adm-step": {
         const p = (state.picks[id] = state.picks[id] || {});
         const it = D().items.find((i) => i.id === el.dataset.item);
+        const tot = Object.values(p).reduce((s, n) => s + (n || 0), 0);
+        if (Number(el.dataset.d) > 0 && capPer() && tot >= capPer()) { toast(`Limit is ${capPer()} per approval (change it in Settings)`, true); break; }
         p[el.dataset.item] = Math.max(0, Math.min(it ? it.qty : 0, (p[el.dataset.item] || 0) + Number(el.dataset.d)));
         render(); break;
       }
@@ -637,6 +672,12 @@
         const list = document.getElementById("set-buildings").value.split("\n").map((s) => s.trim()).filter(Boolean);
         if (!list.length) return toast("Keep at least one building", true);
         run(() => API.adminSaveSetting(state.pw, "buildings", Array.from(new Set(list))), "Buildings saved");
+        break;
+      }
+      case "save-limits": {
+        const cap = parseInt(document.getElementById("set-cap").value, 10), cd = parseFloat(document.getElementById("set-cd").value);
+        if (isNaN(cap) || cap < 0 || isNaN(cd) || cd < 0) return toast("Use 0 or a positive number", true);
+        run(async () => { await API.adminSaveSetting(state.pw, "max_per_approval", cap); await API.adminSaveSetting(state.pw, "cooldown_hours", cd); }, "Limits saved");
         break;
       }
       case "save-names": {

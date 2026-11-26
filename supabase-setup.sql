@@ -68,6 +68,9 @@ insert into public.trove_settings(key, value) values ('buildings', '[
   "Tannery","Smithy","Weaver Mill","Ironwood Sawmill","Oil Press","Smelter","Jewel Storehouse"
 ]'::jsonb) on conflict (key) do nothing;
 
+insert into public.trove_settings(key, value) values ('max_per_approval', '1'::jsonb) on conflict (key) do nothing;
+insert into public.trove_settings(key, value) values ('cooldown_hours', '24'::jsonb) on conflict (key) do nothing;
+
 insert into public.trove_settings(key, value) values ('known_names', '[
   "Worldshaper Hood","Aura Reactor","Darkmatter Cortex","Voyager Neovisor",
   "Microcosmos Infusion","Slipstream Assistant","Paradox Entity","Dimensional Anchor"
@@ -100,7 +103,7 @@ begin
   if p_invested is null or p_invested < 0 then raise exception 'Investment amount must be 0 or more'; end if;
   if p_token is null or length(p_token) < 16 then raise exception 'Bad token'; end if;
   select count(*) into n from trove_requests where lower(player) = lower(p_player) and status in ('pending','approved');
-  if n >= 3 then raise exception 'You already have 3 open requests — finish those first'; end if;
+  if n >= 1 then raise exception 'You already have a request open — finish that one first'; end if;
   select count(*) into n from trove_requests where status = 'pending';
   if n >= 300 then raise exception 'The board is full right now, try again later'; end if;
   insert into trove_requests(player, building, invested, note)
@@ -189,7 +192,7 @@ begin perform trove_check_pw(p_pw); delete from trove_items where id = p_id; end
 -- approve (with allocations [{item_id, qty}]) or deny
 create or replace function public.trove_admin_decide(p_pw text, p_id uuid, p_approve boolean, p_alloc jsonb, p_note text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
-declare r trove_requests; a jsonb; it trove_items; snap jsonb := '[]'::jsonb; q int;
+declare r trove_requests; a jsonb; it trove_items; snap jsonb := '[]'::jsonb; q int; total int := 0; cap int;
 begin
   perform trove_check_pw(p_pw);
   select * into r from trove_requests where id = p_id for update;
@@ -209,6 +212,9 @@ begin
     snap := snap || jsonb_build_object('item_id', it.id, 'name', it.name, 'rarity', it.rarity, 'qty', q, 'icon', it.icon);
   end loop;
   if jsonb_array_length(snap) = 0 then raise exception 'Pick at least one item'; end if;
+  select coalesce((select (value #>> '{}')::int from trove_settings where key = 'max_per_approval'), 0) into cap;
+  select coalesce(sum((x->>'qty')::int), 0) into total from jsonb_array_elements(snap) x;
+  if cap > 0 and total > cap then raise exception 'Max % item(s) per approval — change the limit in Settings', cap; end if;
   update trove_requests set status = 'approved', allocations = snap, admin_note = trove_clean(p_note, 200), decided_at = now() where id = p_id;
 end $$;
 
@@ -241,7 +247,7 @@ create or replace function public.trove_admin_save_setting(p_pw text, p_key text
 language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform trove_check_pw(p_pw);
-  if p_key not in ('buildings','known_names') then raise exception 'Unknown setting'; end if;
+  if p_key not in ('buildings','known_names','max_per_approval','cooldown_hours') then raise exception 'Unknown setting'; end if;
   insert into trove_settings(key, value) values (p_key, p_value) on conflict (key) do update set value = excluded.value;
 end $$;
 

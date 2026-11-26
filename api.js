@@ -42,7 +42,7 @@
       const s = {};
       settings.forEach(x => (s[x.key] = x.value));
       const reqs = allReqs.filter(r => ["pending", "approved"].includes(r.status) || new Date(r.done_at || r.decided_at || 0).getTime() >= cutoff);
-      return { items, requests: reqs, buildings: s.buildings || [], knownNames: s.known_names || [], stats: stats || {} };
+      return { items, requests: reqs, buildings: s.buildings || [], knownNames: s.known_names || [], maxPer: s.max_per_approval == null ? 1 : Number(s.max_per_approval), cooldownH: s.cooldown_hours == null ? 24 : Number(s.cooldown_hours), stats: stats || {} };
     },
     submitRequest: (a) => sbRpc("trove_submit_request", { p_player: a.player, p_building: a.building, p_invested: a.invested, p_note: a.note || null, p_token: a.token }),
     markDone: (id) => sbRpc("trove_mark_done", { p_id: id }),
@@ -65,6 +65,8 @@
     let d = null;
     try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     if (!d) d = { items: [], requests: [], tokens: {}, buildings: DEFAULT_BUILDINGS, knownNames: DEFAULT_NAMES, pw: "demo" };
+    if (d.maxPer == null) d.maxPer = 1;
+    if (d.cooldownH == null) d.cooldownH = 24;
     return d;
   }
   function dbSave(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) { throw new Error("Browser storage is full or blocked"); } }
@@ -81,7 +83,7 @@
       const reqs = d.requests.filter(r => ["pending", "approved"].includes(r.status) || new Date(r.done_at || r.decided_at || 0).getTime() >= cutoff);
       const done = d.requests.filter(r => r.status === "done");
       const items_donated = done.reduce((s, r) => s + r.allocations.reduce((t, a) => t + a.qty, 0), 0);
-      return wait({ items: [...d.items].sort((a, b) => a.name.localeCompare(b.name)), requests: reqs, buildings: d.buildings, knownNames: d.knownNames, stats: { items_donated, requests_done: done.length } });
+      return wait({ items: [...d.items].sort((a, b) => a.name.localeCompare(b.name)), requests: reqs, buildings: d.buildings, knownNames: d.knownNames, maxPer: d.maxPer, cooldownH: d.cooldownH, stats: { items_donated, requests_done: done.length } });
     },
     async submitRequest(a) {
       const d = dbLoad();
@@ -89,8 +91,8 @@
       if (!player) throw new Error("Please enter your in-game name");
       if (!building) throw new Error("Please pick a building");
       if (!(a.invested >= 0)) throw new Error("Investment amount must be 0 or more");
-      if (d.requests.filter(r => r.player.toLowerCase() === player.toLowerCase() && ["pending", "approved"].includes(r.status)).length >= 3)
-        throw new Error("You already have 3 open requests — finish those first");
+      if (d.requests.some(r => r.player.toLowerCase() === player.toLowerCase() && ["pending", "approved"].includes(r.status)))
+        throw new Error("You already have a request open — finish that one first");
       const r = { id: uid(), player, building, invested: a.invested, note: (a.note || "").slice(0, 200) || null, status: "pending", allocations: [], admin_note: null, created_at: now(), decided_at: null, done_at: null };
       d.requests.push(r); d.tokens[r.id] = a.token; dbSave(d); return wait(r.id);
     },
@@ -133,6 +135,8 @@
         snap.push({ item_id: it.id, name: it.name, rarity: it.rarity, qty: a.qty, icon: it.icon });
       }
       if (!snap.length) throw new Error("Pick at least one item");
+      const total = snap.reduce((s, x) => s + x.qty, 0);
+      if (d.maxPer > 0 && total > d.maxPer) throw new Error(`Max ${d.maxPer} item(s) per approval — change the limit in Settings`);
       snap.forEach(s => (d.items.find(x => x.id === s.item_id).qty -= s.qty));
       r.status = "approved"; r.allocations = snap; r.admin_note = note || null; r.decided_at = now(); dbSave(d); return wait();
     },
@@ -149,7 +153,8 @@
     },
     async adminSaveSetting(pw, key, value) {
       const d = dbLoad(); chk(d, pw);
-      if (key === "buildings") d.buildings = value; else if (key === "known_names") d.knownNames = value; else throw new Error("Unknown setting");
+      if (key === "buildings") d.buildings = value; else if (key === "known_names") d.knownNames = value;
+      else if (key === "max_per_approval") d.maxPer = value; else if (key === "cooldown_hours") d.cooldownH = value; else throw new Error("Unknown setting");
       dbSave(d); return wait();
     }
   };
