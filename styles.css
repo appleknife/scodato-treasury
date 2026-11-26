@@ -60,7 +60,7 @@ body {
   background-size: 280px 220px;
 }
 
-.app { max-width: 1120px; margin: 0 auto; padding: 14px 14px 80px; }
+.app { max-width: 1120px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 14px max(80px, env(safe-area-inset-bottom)); }
 
 /* ---------- outlined game text ---------- */
 .gtext, h1, h2, h3, .btn, .tab, .ribbon span, .qty-badge, .stat b {
