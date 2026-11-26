@@ -5,6 +5,8 @@
   const RARITIES = ["legendary", "epic", "flawless", "uncommon", "common"];
   const RLABEL = { common: "Common", uncommon: "Uncommon", flawless: "Flawless", epic: "Epic", legendary: "Legendary" };
   const app = document.getElementById("app");
+  const S = (n) => window.SFX && SFX.play(n);
+
 
   // ---------- local storage helpers ----------
   const ls = {
@@ -63,9 +65,10 @@
   }
   function token() { const a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join(""); }
   let toastT;
-  function toast(msg, err) {
+  function toast(msg, err, sound) {
     const t = document.getElementById("toast");
-    t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+    t.innerHTML = (err ? "" : '<span class="coin"></span> ') + esc(msg); t.className = "toast show" + (err ? " err" : "");
+    if (sound !== false) S(err ? "error" : sound || "coin");
     clearTimeout(toastT); toastT = setTimeout(() => (t.className = "toast" + (err ? " err" : "")), err ? 4200 : 2600);
   }
   function iconHTML(it, size) {
@@ -112,6 +115,27 @@
     return [...items].sort((a, b) => (b.qty > 0) - (a.qty > 0) || RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity) || a.name.localeCompare(b.name));
   }
 
+  // when one of my requests flips to approved, celebrate once
+  function celebrate() {
+    const seen = ls.get("trove.seenApproved", []);
+    const fresh = D().requests.filter((r) => r.status === "approved" && isMine(r.id) && !seen.includes(r.id));
+    if (!fresh.length || state.tab === "admin") return;
+    ls.set("trove.seenApproved", [...seen, ...fresh.map((r) => r.id)].slice(-50));
+    S("success"); setTimeout(() => S("sparkle"), 350);
+    document.querySelectorAll(".spot.approved").forEach((el) => {
+      el.classList.add("burst");
+      for (let i = 0; i < 14; i++) {
+        const c = document.createElement("span");
+        c.className = "confetti-coin";
+        c.style.setProperty("--dx", (Math.random() * 2 - 1) * 160 + "px");
+        c.style.setProperty("--dy", -(60 + Math.random() * 120) + "px");
+        c.style.left = 20 + Math.random() * 60 + "%";
+        c.style.animationDelay = Math.random() * 0.25 + "s";
+        el.appendChild(c);
+      }
+    });
+  }
+
   // ---------- loading ----------
   async function load(quiet) {
     try {
@@ -141,11 +165,11 @@
   setInterval(() => { if (!document.hidden && !state.busy && !(state.imp && state.imp.reading)) load(true); }, 20000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(true); });
 
-  async function run(fn, okMsg) {
+  async function run(fn, okMsg, sound) {
     if (state.busy) return;
     state.busy = true;
     document.body.style.cursor = "progress";
-    try { await fn(); if (okMsg) toast(okMsg); await load(true); }
+    try { await fn(); if (okMsg) toast(okMsg, false, sound); await load(true); }
     catch (e) {
       const msg = e.message || String(e);
       toast(msg, true);
@@ -162,6 +186,7 @@
     const pend = byStatus("pending").length;
     const html = `
       <header class="header">
+        <button class="mute" data-act="mute" aria-label="${window.SFX && SFX.muted ? "Turn sounds on" : "Turn sounds off"}" title="Sounds">${window.SFX && SFX.muted ? "🔇" : "🔊"}</button>
         <div class="crest"></div>
         <div class="title-banner"><h1>${esc(CFG.TITLE)}</h1></div>
         <div class="subtitle">${esc(CFG.SUBTITLE)}</div>
@@ -180,9 +205,11 @@
       ${API.mode === "demo" ? `<div class="notice demo"><b>Demo mode:</b> nothing is shared yet — everything saves only in this browser. ${esc(DONOR)}'s demo password is <b>demo</b>. Connect Supabase in <code>config.js</code> to go live.</div>` : ""}
       ${state.error ? `<div class="notice">Having trouble reaching the board (${esc(state.error)}). Retrying…</div>` : ""}
       ${state.tab !== "admin" ? spotlights() : ""}
-      <main>${state.tab === "treasury" ? treasuryView() : state.tab === "request" ? requestView() : state.tab === "board" ? boardView() : adminView()}</main>
+      <main class="${state.anim ? "enter" : ""}">${state.tab === "treasury" ? treasuryView() : state.tab === "request" ? requestView() : state.tab === "board" ? boardView() : adminView()}</main>
       <footer class="footer">Made for the guild · items are donated in-game through guild requests · fan-made, not affiliated with Kabam / Shop Titans</footer>`;
     app.innerHTML = html;
+    state.anim = false;
+    celebrate();
   }
   function tabBtn(id, label, pip) {
     return `<button class="tab" role="tab" aria-selected="${state.tab === id}" data-act="tab" data-id="${id}">${esc(label)}${pip ? `<span class="pip">${pip}</span>` : ""}</button>`;
@@ -509,7 +536,7 @@
       });
       if (!rows.length) { state.imp = null; toast("Couldn't find any item cards in that image — try a clearer screenshot", true); render(); return; }
       state.imp = { rows: rows.map((r) => ({ include: true, name: r.name, rarity: "legendary", qty: r.qty, icon: r.icon, nameSure: r.nameSure && !!r.name, qtySure: r.qtySure })) };
-      toast(`Found ${rows.length} item${rows.length === 1 ? "" : "s"} — check them over`);
+      toast(`Found ${rows.length} item${rows.length === 1 ? "" : "s"} — check them over`, false, "sparkle");
     } catch (e) {
       state.imp = null; toast(e.message || "Couldn't read that screenshot", true);
     }
@@ -537,7 +564,7 @@
       await API.adminSaveItems(state.pw, payload);
       if (names.length !== (D().knownNames || []).length) await API.adminSaveSetting(state.pw, "known_names", names);
       state.imp = null;
-    }, "Treasury updated!");
+    }, "Treasury updated!", "success");
   }
 
   // ---------- events ----------
@@ -601,7 +628,7 @@
         state.form.invested = ""; state.form.note = "";
         state.tab = "board"; location.hash = "board";
         window.scrollTo({ top: 0, behavior: "smooth" });
-      }, "Request sent! Check back to see when it's approved.");
+      }, "Request sent! Check back to see when it's approved.", "success");
     }
     if (f.dataset.form === "login") {
       e.preventDefault();
@@ -609,19 +636,24 @@
       await run(async () => {
         await API.adminLogin(pw);
         state.pw = pw; ss.set("trove.pw", pw); if (remember) ls.set("trove.pw", pw);
-      }, "Welcome back, " + DONOR + "!");
+      }, "Welcome back, " + DONOR + "!", "success");
     }
   });
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-act]");
     if (!el) return;
     const act = el.dataset.act, id = el.dataset.id;
+    if (act === "tab" || act === "atab") S("tab");
+    else if (act === "adm-step") S(Number(el.dataset.d) > 0 ? "step" : "stepDown");
+    else if (act === "imp-pick") S("whoosh");
+    else if (!["mark-done", "adm-approve", "mute"].includes(act)) S("click");
     switch (act) {
-      case "tab": state.tab = id; history.replaceState(null, "", "#" + id); render(); window.scrollTo({ top: 0 }); break;
-      case "atab": state.adminTab = id; render(); break;
+      case "mute": { const m = SFX.toggle(); el.textContent = m ? "🔇" : "🔊"; el.setAttribute("aria-label", m ? "Turn sounds on" : "Turn sounds off"); break; }
+      case "tab": state.tab = id; state.anim = true; history.replaceState(null, "", "#" + id); render(); window.scrollTo({ top: 0 }); break;
+      case "atab": state.adminTab = id; state.anim = true; render(); break;
       case "logout": logout(); break;
-      case "mark-done": run(() => API.markDone(id), "Marked done — thanks!"); break;
-      case "cancel-mine": run(() => API.playerCancel(id, myToken(id)), "Removed"); break;
+      case "mark-done": run(() => API.markDone(id), "Marked done — thanks!", "sparkle"); break;
+      case "cancel-mine": run(() => API.playerCancel(id, myToken(id)), "Removed", "paper"); break;
       case "adm-toggle": {
         state.open[id] = !state.open[id];
         // start with 1 of whatever he has the most of, so spreading items out is the easy path
@@ -642,10 +674,10 @@
       case "adm-approve": {
         const p = state.picks[id] || {};
         const alloc = Object.entries(p).filter(([, q]) => q > 0).map(([item_id, qty]) => ({ item_id, qty }));
-        run(async () => { await API.adminDecide(state.pw, id, true, alloc, state.notes[id]); delete state.picks[id]; delete state.open[id]; delete state.notes[id]; }, "Approved!");
+        run(async () => { await API.adminDecide(state.pw, id, true, alloc, state.notes[id]); delete state.picks[id]; delete state.open[id]; delete state.notes[id]; }, "Approved!", "success");
         break;
       }
-      case "adm-deny": run(async () => { await API.adminDecide(state.pw, id, false, [], state.notes[id]); delete state.notes[id]; }, "Denied"); break;
+      case "adm-deny": run(async () => { await API.adminDecide(state.pw, id, false, [], state.notes[id]); delete state.notes[id]; }, "Denied", "paper"); break;
       case "adm-undo": run(() => API.adminReopen(state.pw, id), "Moved back to waiting"); break;
       case "imp-pick": document.getElementById("imp-file").click(); break;
       case "imp-cancel": state.imp = null; render(); break;
@@ -715,6 +747,13 @@
     if (!(state.tab === "admin" && state.pw && state.adminTab === "items") || (state.imp && state.imp.reading)) return;
     const item = Array.from(e.clipboardData.items || []).find((i) => i.type.startsWith("image/"));
     if (item) { e.preventDefault(); importFile(item.getAsFile()); }
+  });
+  let hovered = null;
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType !== "mouse") return;
+    const el = e.target.closest(".btn, .tab, .icard, .stepper button, .drop, .mute");
+    if (el && el !== hovered && !el.disabled) S("hover");
+    hovered = el;
   });
   window.addEventListener("hashchange", () => {
     const t = location.hash.replace("#", "");
