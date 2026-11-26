@@ -366,7 +366,7 @@
     const approved = byStatus("approved").sort((a, b) => new Date(b.decided_at) - new Date(a.decided_at));
     const recent = D().requests.filter((r) => r.status === "done" || r.status === "denied").sort((a, b) => new Date(b.done_at || b.decided_at) - new Date(a.done_at || a.decided_at)).slice(0, 12);
     return `<section class="panel">
-      <div class="panel-head"><h2 class="gtext">Approved — go request in game</h2></div>
+      <div class="panel-head"><h2 class="gtext">Approved — please request in game</h2></div>
       ${approved.length ? `<div class="req-list">${approved.map((r) => reqCard(r, {})).join("")}</div>` : `<div class="empty">Nothing approved right now.</div>`}
     </section>
     <section class="panel">
@@ -406,7 +406,7 @@
       ${ranked.length ? `<div class="req-list">${ranked.map((r) => reqCard(r, { ranked, admin: true })).join("")}</div>` : `<div class="empty"><span class="gtext">All caught up</span>No new requests.</div>`}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2 class="gtext">Approved — waiting on the game</h2></div>
+      <div class="panel-head"><h2 class="gtext">Approved — please request in game</h2></div>
       <p class="muted small" style="margin-top:-6px">Tap Done after you've filled their guild request (they can tap it too). Undo puts the items back.</p>
       ${approved.length ? `<div class="req-list">${approved.map((r) => reqCard(r, { admin: true })).join("")}</div>` : `<div class="empty">Nothing waiting.</div>`}
     </section>
