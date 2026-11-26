@@ -25,8 +25,9 @@
     adminTab: "requests",
     pw: ss.get("trove.pw") || ls.get("trove.pw", null),
     mine: ls.get("trove.mine", []), // [{id, token}]
-    form: Object.assign({ player: "", building: "", invested: "", note: "" }, ls.get("trove.form", {})),
+    form: Object.assign({ player: "", building: "", invested: "", note: "", wish: "" }, ls.get("trove.form", {})),
     open: {},      // admin: which pending request has its picker open
+    denying: {},   // admin: which pending request has the deny box open
     picks: {},     // admin: {reqId: {itemId: qty}}
     notes: {},     // admin: {reqId: note}
     imp: null,     // admin: screenshot import state
@@ -294,6 +295,12 @@
         <label class="field"><span>Your current investment in that building</span>
           <input name="invested" inputmode="decimal" required value="${esc(f.invested)}" data-bind="form.invested" placeholder="e.g. 12 or 1.5B">
           <div class="hint">Copy it from the building's invest screen. You can type 1.5K / 2M / 3B. The lower it is, the more the guild gains — so lower goes first in line.</div></label>
+        <label class="field"><span>Item you'd like</span>
+          <select data-bind="form.wish">
+            <option value="">Surprise me — ${esc(DONOR)} picks</option>
+            ${sortItems(d.items).filter((i) => i.qty > 0).map((i) => `<option value="${i.id}" ${f.wish === i.id ? "selected" : ""}>${esc(i.name)} · ${RLABEL[i.rarity] || "Legendary"} (${i.qty} left)</option>`).join("")}
+          </select>
+          <div class="hint">${esc(DONOR)} usually gives 1 item per request.</div></label>
         <label class="field"><span>Note for ${esc(DONOR)} <span class="muted small">(optional)</span></span>
           <textarea name="note" maxlength="200" data-bind="form.note" placeholder="Anything he should know?">${esc(f.note)}</textarea></label>
         <div id="cd-note">${cdNote(f.player)}</div>
@@ -320,7 +327,8 @@
     const mine = isMine(r.id);
     let actions = "";
     if (ctx.admin) {
-      if (r.status === "pending") actions = `<button class="btn sm green" data-act="adm-toggle" data-id="${r.id}">${state.open[r.id] ? "Close" : "Approve…"}</button><button class="btn sm red" data-act="adm-deny" data-id="${r.id}">Deny</button>`;
+      if (r.status === "pending") actions = state.open[r.id] || state.denying[r.id] ? `<button class="btn sm wood" data-act="adm-close" data-id="${r.id}">Close</button>`
+        : `<button class="btn sm green" data-act="adm-toggle" data-id="${r.id}">Pick items ▸</button><button class="btn sm red" data-act="adm-deny-open" data-id="${r.id}">Deny</button>`;
       else if (r.status === "approved") actions = `<button class="btn sm blue" data-act="mark-done" data-id="${r.id}">Done ✓</button><button class="btn sm wood" data-act="adm-undo" data-id="${r.id}">Undo</button>`;
       else if (r.status === "denied") actions = `<button class="btn sm wood" data-act="adm-undo" data-id="${r.id}">Undo deny</button>`;
     } else {
@@ -338,13 +346,18 @@
           ${pos === 1 ? `<span class="chip best">Lowest investment — next up</span>` : ""}
           <span class="chip">${r.status === "done" ? "finished " + ago(r.done_at) : r.status === "denied" ? "denied " + ago(r.decided_at) : r.status === "approved" ? "approved " + ago(r.decided_at) : "asked " + ago(r.created_at)}</span>
         </div>
+        ${r.wish && r.status === "pending" ? `<div class="alloc-list"><span class="small" style="align-self:center">Would like:</span><span class="alloc ${rclass(r.wish.rarity)}">${iconHTML(Object.assign({}, r.wish, { icon: (D().items.find((i) => i.id === r.wish.item_id) || {}).icon }), "xs")}<span class="alloc-txt"><span>${esc(r.wish.name)}</span>${rarityTag(r.wish.rarity)}</span></span></div>` : ""}
         ${r.note ? `<div class="req-note">“${esc(r.note)}”</div>` : ""}
         ${r.status === "approved" || r.status === "done" ? `${r.status === "approved" ? `<div class="small" style="margin-top:8px">Guild request in game for:</div>` : ""}${allocsHTML(r.allocations)}` : ""}
         ${r.admin_note && r.status !== "pending" ? `<div class="req-note">${esc(DONOR)}: “${esc(r.admin_note)}”</div>` : ""}
       </div>
       <div class="req-actions">${actions}</div>
       ${ctx.admin && r.status === "pending" && state.open[r.id] ? picker(r) : ""}
-      ${ctx.admin && r.status === "pending" && !state.open[r.id] ? `<div style="grid-column:1/-1"><input placeholder="Reason / note (optional, shown to them)" data-bind="notes.${r.id}" value="${esc(state.notes[r.id] || "")}" style="padding:7px 10px;border-width:2px"></div>` : ""}
+      ${ctx.admin && r.status === "pending" && state.denying[r.id] ? `<div class="picker">
+        <div class="gtext" style="font-size:17px;color:var(--wood);margin-bottom:6px">Deny ${esc(r.player)}'s request?</div>
+        <input placeholder="Reason (optional — they'll see it)" data-bind="notes.${r.id}" value="${esc(state.notes[r.id] || "")}">
+        <div class="btn-row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm red" data-act="adm-deny" data-id="${r.id}">Deny request</button></div>
+      </div>` : ""}
     </article>`;
   }
 
@@ -389,7 +402,7 @@
     const denied = byStatus("denied");
     return `<section class="panel">
       <div class="panel-head"><h2 class="gtext">Waiting for you</h2></div>
-      <p class="muted small" style="margin-top:-6px">Lowest current investment first. Approve to choose items — they're set aside right away so nobody else gets promised the same ones.</p>
+      <p class="muted small" style="margin-top:-6px">Lowest current investment first. Tap <b>Pick items</b> on a request, choose what they get with + / −, then <b>Approve</b>. Those items are set aside so nobody else gets promised them.</p>
       ${ranked.length ? `<div class="req-list">${ranked.map((r) => reqCard(r, { ranked, admin: true })).join("")}</div>` : `<div class="empty"><span class="gtext">All caught up</span>No new requests.</div>`}
     </section>
     <section class="panel">
@@ -406,7 +419,8 @@
     if (!items.length) return `<div class="picker">Your treasury is empty — add items under <b>My items</b> first.</div>`;
     const total = Object.values(p).reduce((s, n) => s + (n || 0), 0);
     return `<div class="picker">
-      <div class="gtext" style="font-size:17px;color:var(--wood);margin-bottom:6px">What should ${esc(r.player)} request?</div>
+      <div class="gtext" style="font-size:17px;color:var(--wood);margin-bottom:2px">What should ${esc(r.player)} put up as a guild request?</div>
+      <div class="small muted" style="margin-bottom:6px">Use + / − to choose items${r.wish ? ` — they asked for <b>${esc(r.wish.name)}</b>, already picked for you` : ""}. Then tap Approve.</div>
       ${items.map((i) => `<div class="pick-row">
         ${iconHTML(i, "sm")}
         <div><div class="pick-name">${esc(i.name)}</div>${rarityTag(i.rarity)} <span class="small muted">· ${i.qty} left</span></div>
@@ -623,7 +637,9 @@
       if (isNaN(inv)) return toast("Investment should be a number like 12, 1.5K or 2B", true);
       const tok = token();
       await run(async () => {
-        const id = await API.submitRequest({ player: state.form.player.trim(), building: state.form.building, invested: inv, note: state.form.note.trim(), token: tok });
+        const wi = D().items.find((i) => i.id === state.form.wish);
+        const id = await API.submitRequest({ player: state.form.player.trim(), building: state.form.building, invested: inv, note: state.form.note.trim(), token: tok, wish: wi ? { item_id: wi.id, name: wi.name } : null });
+        state.form.wish = "";
         state.mine.push({ id, token: tok }); ls.set("trove.mine", state.mine);
         state.form.invested = ""; state.form.note = "";
         state.tab = "board"; location.hash = "board";
@@ -657,8 +673,11 @@
       case "adm-toggle": {
         state.open[id] = !state.open[id];
         // start with 1 of whatever he has the most of, so spreading items out is the easy path
+        delete state.denying[id];
         if (state.open[id] && !state.picks[id]) {
-          const top = D().items.filter((i) => i.qty > 0).sort((a, b) => b.qty - a.qty)[0];
+          const req = D().requests.find((x) => x.id === id);
+          const wished = req && req.wish && D().items.find((i) => i.id === req.wish.item_id && i.qty > 0);
+          const top = wished || D().items.filter((i) => i.qty > 0).sort((a, b) => b.qty - a.qty)[0];
           if (top) state.picks[id] = { [top.id]: 1 };
         }
         render(); break;
@@ -677,7 +696,9 @@
         run(async () => { await API.adminDecide(state.pw, id, true, alloc, state.notes[id]); delete state.picks[id]; delete state.open[id]; delete state.notes[id]; }, "Approved!", "success");
         break;
       }
-      case "adm-deny": run(async () => { await API.adminDecide(state.pw, id, false, [], state.notes[id]); delete state.notes[id]; }, "Denied", "paper"); break;
+      case "adm-deny-open": state.denying[id] = true; delete state.open[id]; render(); break;
+      case "adm-close": delete state.open[id]; delete state.denying[id]; render(); break;
+      case "adm-deny": delete state.denying[id]; run(async () => { await API.adminDecide(state.pw, id, false, [], state.notes[id]); delete state.notes[id]; }, "Denied", "paper"); break;
       case "adm-undo": run(() => API.adminReopen(state.pw, id), "Moved back to waiting"); break;
       case "imp-pick": document.getElementById("imp-file").click(); break;
       case "imp-cancel": state.imp = null; render(); break;

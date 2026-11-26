@@ -31,6 +31,9 @@ create table if not exists public.trove_requests (
   done_at      timestamptz
 );
 
+-- added later: the item a player would like (optional)
+alter table public.trove_requests add column if not exists wish jsonb;
+
 create table if not exists public.trove_settings (
   key   text primary key,
   value jsonb not null
@@ -92,7 +95,8 @@ create or replace function public.trove_clean(t text, maxlen int) returns text
 language sql immutable as $$ select nullif(left(btrim(coalesce(t,'')), maxlen), '') $$;
 
 -- ---------- player functions ----------
-create or replace function public.trove_submit_request(p_player text, p_building text, p_invested numeric, p_note text, p_token text)
+drop function if exists public.trove_submit_request(text,text,numeric,text,text);
+create or replace function public.trove_submit_request(p_player text, p_building text, p_invested numeric, p_note text, p_token text, p_wish uuid default null)
 returns uuid language plpgsql security definer set search_path = public, extensions as $$
 declare new_id uuid; n int;
 begin
@@ -106,8 +110,10 @@ begin
   if n >= 1 then raise exception 'You already have a request open — finish that one first'; end if;
   select count(*) into n from trove_requests where status = 'pending';
   if n >= 300 then raise exception 'The board is full right now, try again later'; end if;
-  insert into trove_requests(player, building, invested, note)
-    values (p_player, p_building, p_invested, trove_clean(p_note, 200)) returning id into new_id;
+  insert into trove_requests(player, building, invested, note, wish)
+    values (p_player, p_building, p_invested, trove_clean(p_note, 200),
+      (select jsonb_build_object('item_id', i.id, 'name', i.name, 'rarity', i.rarity) from trove_items i where i.id = p_wish))
+    returning id into new_id;
   insert into trove_request_tokens(request_id, token_hash) values (new_id, encode(digest(p_token, 'sha256'), 'hex'));
   return new_id;
 end $$;
@@ -256,7 +262,7 @@ revoke all on function public.trove_check_pw(text) from public, anon, authentica
 revoke all on public.trove_request_tokens, public.trove_admin_secret from anon, authenticated;
 revoke insert, update, delete on public.trove_items, public.trove_requests, public.trove_settings from anon, authenticated;
 grant select on public.trove_items, public.trove_requests, public.trove_settings to anon, authenticated;
-grant execute on function public.trove_submit_request(text,text,numeric,text,text), public.trove_mark_done(uuid),
+grant execute on function public.trove_submit_request(text,text,numeric,text,text,uuid), public.trove_mark_done(uuid),
   public.trove_player_cancel(uuid,text), public.trove_public_stats(), public.trove_admin_login(text),
   public.trove_admin_change_password(text,text), public.trove_admin_save_items(text,jsonb),
   public.trove_admin_delete_item(text,uuid), public.trove_admin_decide(text,uuid,boolean,jsonb,text),

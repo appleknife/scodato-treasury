@@ -43,7 +43,17 @@
       const reqs = allReqs.filter(r => ["pending", "approved"].includes(r.status) || new Date(r.done_at || r.decided_at || 0).getTime() >= cutoff);
       return { items, requests: reqs, buildings: s.buildings || [], knownNames: s.known_names || [], maxPer: s.max_per_approval == null ? 1 : Number(s.max_per_approval), cooldownH: s.cooldown_hours == null ? 24 : Number(s.cooldown_hours), stats: stats || {} };
     },
-    submitRequest: (a) => sbRpc("trove_submit_request", { p_player: a.player, p_building: a.building, p_invested: a.invested, p_note: a.note || null, p_token: a.token }),
+    async submitRequest(a) {
+      const args = { p_player: a.player, p_building: a.building, p_invested: a.invested, p_note: a.note || null, p_token: a.token };
+      if (!a.wish) return sbRpc("trove_submit_request", args);
+      try { return await sbRpc("trove_submit_request", Object.assign({ p_wish: a.wish.item_id }, args)); }
+      catch (e) {
+        // database not updated yet: fall back to putting the wish in the note
+        if (!/function|p_wish|schema cache/i.test(e.message)) throw e;
+        args.p_note = ("Would like: " + a.wish.name + (a.note ? " — " + a.note : "")).slice(0, 200);
+        return sbRpc("trove_submit_request", args);
+      }
+    },
     markDone: (id) => sbRpc("trove_mark_done", { p_id: id }),
     playerCancel: (id, token) => sbRpc("trove_player_cancel", { p_id: id, p_token: token }),
     adminLogin: (pw) => sbRpc("trove_admin_login", { p_pw: pw }),
@@ -92,7 +102,8 @@
       if (!(a.invested >= 0)) throw new Error("Investment amount must be 0 or more");
       if (d.requests.some(r => r.player.toLowerCase() === player.toLowerCase() && ["pending", "approved"].includes(r.status)))
         throw new Error("You already have a request open — finish that one first");
-      const r = { id: uid(), player, building, invested: a.invested, note: (a.note || "").slice(0, 200) || null, status: "pending", allocations: [], admin_note: null, created_at: now(), decided_at: null, done_at: null };
+      const wi = a.wish && d.items.find(x => x.id === a.wish.item_id);
+      const r = { id: uid(), player, building, invested: a.invested, note: (a.note || "").slice(0, 200) || null, wish: wi ? { item_id: wi.id, name: wi.name, rarity: wi.rarity } : null, status: "pending", allocations: [], admin_note: null, created_at: now(), decided_at: null, done_at: null };
       d.requests.push(r); d.tokens[r.id] = a.token; dbSave(d); return wait(r.id);
     },
     async markDone(id) {
